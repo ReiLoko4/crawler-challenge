@@ -45,6 +45,16 @@ function splitNumber(text): [string, string] {
         outputText
     ]
 }
+
+function cleanStr(text: string) {
+    return text
+        .toLowerCase()
+        .replace(/-/g, " ")
+        .replace(/ de /g, " ")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+}
+
 const quilo = [
     "quilo",
     "kg",
@@ -55,11 +65,6 @@ const litro = [
     "l",
     "litro",
     "ml"
-]
-
-const zeroLactose = [
-    "zero lactose",
-    
 ]
 
 var predata: {
@@ -75,48 +80,65 @@ var predata: {
 
 file.forEach(
     (data: MarketData) => {
-    var splited = data.title.toLowerCase().split(" ")
+    var tags = cleanStr(data.title).split(" ")
     var quantity = ""
     var metric = ""
-    if (hasNumber(splited.at(-1)??"")) {
-        [quantity, metric] = splitNumber(splited.at(-1))
-        splited.pop()
+    const lactose = tags.includes("lactose")
+    if (hasNumber(tags.at(-1)??"")) {
+        [quantity, metric] = splitNumber(tags.at(-1))
+        tags.pop()
     } else {
-        [quantity, metric] = splited.slice(-3, -1)
-        splited = splited.slice(0, -2)
+        [quantity, metric] = tags.slice(-3, -1)
+        tags = tags.slice(0, -2)
     }
     if (["g", "grama", "ml"].includes(metric)) {
         quantity = (Number(quantity) / 1000).toString()
     }
     metric = quilo.includes(metric) ? "kg" : "l"
-    
-    var found = false;
-    for (var out of predata) {
+    var foundIndex;
+    var mostPoints = 0;
+    for (var [i, value] of predata.entries()) {
         var points = 0
-        out.tags.forEach(tag => {
-            if (splited.includes(tag)) {
+        value.tags.forEach(tag => {
+            if (tags.includes(tag)) {
                 points += 1
             }
         })
-        if (points > 3 && out.metric === metric && out.quantity === quantity) {
-            out.products.push({
-                title: data.title,
-                supermarket: data.supermarket
-            })
-            found = true
-            break
+        if (lactose && !value.tags.includes("lactose")) continue;
+        if (tags.length === points) {
+            foundIndex = i
+            break;
+        }
+        if (points > 2 
+            && points > mostPoints
+            && tags.length - points < 2
+            && value.metric === metric 
+            && value.quantity === quantity
+            && !value.products.map(
+                prod => prod.supermarket
+            ).includes(
+                data.supermarket
+            )) {
+            
+            foundIndex = i
+            mostPoints = points
         }
     }
-    if (!found) {
+    if (foundIndex === undefined) {
         predata.push({
             title: data.title,
-            tags: splited,
+            tags: tags,
             quantity: quantity,
             metric: metric,
             products: [{
                 title: data.title,
                 supermarket: data.supermarket
             }]
+        })
+    } else {
+        predata[foundIndex].products.push({
+            title: data.title,
+            supermarket: data.supermarket
         })
     }
 
@@ -132,6 +154,5 @@ const output: Output[] = predata.map(data => {
     }
 })
 
-console.log(output)
-console.log(output.length, file.length)
-fs.writeFileSync("test.json", JSON.stringify(output))
+console.log(JSON.stringify(output))
+// fs.writeFileSync("output.json", JSON.stringify(output))
